@@ -76,10 +76,10 @@ Found another site that works (or breaks)? [Open an issue](https://github.com/Th
 Requires Python 3.10+. ffmpeg is bundled, nothing else to install.
 
 ```bash
-pip install "videolens[all] @ git+https://github.com/TheRookies/videolens.git"
+pip install "videolens-mcp[all] @ git+https://github.com/TheRookies/videolens.git"
 ```
 
-`[all]` adds local Whisper and OCR. Drop it (`pip install "videolens @ git+..."`) for the light install; those two tools then say what to install.
+`[all]` adds local Whisper and OCR. Drop it (`pip install "videolens-mcp @ git+..."`) for the light install; those two tools then say what to install.
 
 **Claude Code**
 
@@ -159,7 +159,7 @@ Found a vulnerability? See [SECURITY.md](https://github.com/TheRookies/videolens
 
 ## Roadmap
 
-- [ ] PyPI release (`uvx videolens`)
+- [ ] PyPI release (`uvx videolens-mcp`; the PyPI name is `videolens-mcp` because `video-lens` already exists there)
 - [ ] Optional GPU Whisper
 - [ ] Playlist research mode
 - [ ] Per-speaker transcripts

@@ -3,8 +3,8 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "videolens"
-version = "0.3.0"
+name = "videolens-mcp"
+version = "0.3.1"
 description = "Give your AI eyes on video: YouTube-first MCP server for research, comments, transcripts, frames, OCR and local Whisper. No API key."
 readme = "README.md"
 license = { text = "MIT" }
@@ -33,6 +33,7 @@ dev = ["pytest", "ruff"]
 
 [project.scripts]
 videolens = "videolens.server:main"
+videolens-mcp = "videolens.server:main"
 
 [project.urls]
 Homepage = "https://github.com/TheRookies/videolens"

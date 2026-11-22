@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1
+
+- The PyPI distribution is named `videolens-mcp` (PyPI rejects `videolens`: `video-lens` already exists). The import package and the `videolens` command are unchanged; `videolens-mcp` is added as a command alias so `uvx videolens-mcp` works.
+
 ## 0.3.0
 
 Renamed from TubeLens to **VideoLens**: video research beyond YouTube.
