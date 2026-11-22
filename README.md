@@ -4,6 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TheRookies/videolens/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/TheRookies/videolens/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://pypi.org/project/videolens-mcp/"><img alt="PyPI" src="https://img.shields.io/pypi/v/videolens-mcp.svg"></a>
   <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg">
   <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-blue.svg">
   <img alt="MCP server" src="https://img.shields.io/badge/MCP-server-8A2BE2.svg">
@@ -76,15 +77,23 @@ Found another site that works (or breaks)? [Open an issue](https://github.com/Th
 Requires Python 3.10+. ffmpeg is bundled, nothing else to install.
 
 ```bash
-pip install "videolens-mcp[all] @ git+https://github.com/TheRookies/videolens.git"
+pip install "videolens-mcp[all]"
 ```
 
-`[all]` adds local Whisper and OCR. Drop it (`pip install "videolens-mcp @ git+..."`) for the light install; those two tools then say what to install.
+The PyPI package is called **`videolens-mcp`** (PyPI already has an unrelated `video-lens`); the command is `videolens`. `[all]` adds local Whisper and OCR. Drop it (`pip install videolens-mcp`) for the light install; those two tools then say what to install.
+
+No install at all, with [uv](https://docs.astral.sh/uv/): `uvx --from "videolens-mcp[all]" videolens`
 
 **Claude Code**
 
 ```bash
 claude mcp add --scope user videolens --env PYTHONUTF8=1 -- videolens
+```
+
+or without installing anything first:
+
+```bash
+claude mcp add --scope user videolens --env PYTHONUTF8=1 -- uvx --from "videolens-mcp[all]" videolens
 ```
 
 **Claude Desktop / Cursor / any MCP client**
@@ -159,7 +168,7 @@ Found a vulnerability? See [SECURITY.md](https://github.com/TheRookies/videolens
 
 ## Roadmap
 
-- [ ] PyPI release (`uvx videolens-mcp`; the PyPI name is `videolens-mcp` because `video-lens` already exists there)
+- [x] PyPI release (`pip install videolens-mcp`)
 - [ ] Optional GPU Whisper
 - [ ] Playlist research mode
 - [ ] Per-speaker transcripts
