@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping. TubeLens is small on purpose.
+Thanks for helping. VideoLens is small on purpose.
 
 ## Setup
 

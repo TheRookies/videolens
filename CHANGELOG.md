@@ -1,8 +1,24 @@
 # Changelog
 
+## 0.3.0
+
+Renamed from TubeLens to **VideoLens**: video research beyond YouTube.
+
+### Added
+- Verified support for **TED** and the **Internet Archive** (info, frames, OCR, Whisper; TED subtitles in many languages).
+- WebVTT, SRT and HLS-playlist subtitle parsing, not only YouTube's format.
+- `VIDEOLENS_EXTRA_HOSTS` to opt in other yt-dlp sites (the old `TUBELENS_EXTRA_HOSTS` still works).
+
+### Fixed
+- `lang="auto"` picked an arbitrary language on videos with dozens of manual subtitles; now prefers English, then the first available.
+- Vimeo and other login-only sites now fail with a clear message instead of a raw error.
+
+### Notes
+- Vimeo does not work (it requires a login, which VideoLens never uses).
+
 ## 0.2.0
 
-Renamed to **TubeLens**, packaged for `pip`, and hardened after a full audit.
+Renamed to **VideoLens**, packaged for `pip`, and hardened after a full audit.
 
 ### Added
 - `youtube_research`: multi-search topic research with ranking and per-video briefs.

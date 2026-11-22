@@ -1,7 +1,7 @@
 """Offline unit tests: no network, no YouTube. Run with `pytest`."""
 import pytest
 
-from tubelens import server as s
+from videolens import server as s
 
 
 def test_parse_time():
@@ -51,10 +51,10 @@ def test_blocked_urls(url):
 
 
 def test_extra_hosts_are_opt_in(monkeypatch):
-    monkeypatch.delenv("TUBELENS_EXTRA_HOSTS", raising=False)
+    monkeypatch.delenv("VIDEOLENS_EXTRA_HOSTS", raising=False)
     with pytest.raises(ValueError):
         s._check_url("https://vimeo.com/1")
-    monkeypatch.setenv("TUBELENS_EXTRA_HOSTS", "vimeo.com")
+    monkeypatch.setenv("VIDEOLENS_EXTRA_HOSTS", "vimeo.com")
     assert s._check_url("https://vimeo.com/1") == "https://vimeo.com/1"
 
 
@@ -94,3 +94,27 @@ def test_age_days():
     assert s._age_days(None) is None
     assert s._age_days("garbage") is None
     assert s._age_days("20000101") > 9000
+
+
+def test_parse_vtt_and_srt():
+    vtt = (
+        "WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nHello <i>there</i>\n\n"
+        "01:00:05.500 --> 01:00:07.000\nWorld &amp; co\nsecond line\n"
+    )
+    assert s._parse_cues(vtt) == [(1.0, "Hello there"), (3605.5, "World & co second line")]
+    srt = "1\n00:00:02,250 --> 00:00:04,000\nHi\n\n2\n00:00:05,000 --> 00:00:06,000\nBye\n"
+    assert s._parse_cues(srt) == [(2.25, "Hi"), (5.0, "Bye")]
+
+
+def test_pick_lang_prefers_english_among_many_manual_subs():
+    subs = {"pt": [], "af": [], "en": [], "de": []}
+    assert s._pick_lang({"subtitles": subs}, "auto") == "en"
+
+
+def test_tested_hosts_allowed_but_vimeo_is_not(monkeypatch):
+    monkeypatch.delenv("VIDEOLENS_EXTRA_HOSTS", raising=False)
+    monkeypatch.delenv("TUBELENS_EXTRA_HOSTS", raising=False)
+    assert s._check_url("https://www.ted.com/talks/x")
+    assert s._check_url("https://archive.org/details/x")
+    with pytest.raises(ValueError):
+        s._check_url("https://vimeo.com/1")

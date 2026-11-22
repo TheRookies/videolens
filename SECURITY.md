@@ -8,7 +8,8 @@ You can expect an acknowledgement within a few days. Please include the tool nam
 
 ## Design notes
 
-- Tools accept only `http(s)` URLs on YouTube hosts by default. Extra hosts are opt-in through `TUBELENS_EXTRA_HOSTS`.
+- Tools accept only `http(s)` URLs on an allow-list (YouTube, TED, archive.org) by default. Extra hosts are opt-in through `VIDEOLENS_EXTRA_HOSTS`.
+- Caption downloads accept only `http(s)` URLs, so a crafted caption link cannot read local files.
 - ffmpeg is started without a shell and with a protocol whitelist (`http`, `https`, `tls`, `tcp`, `crypto`).
 - The server does not read credentials, cookies or files from the user's machine, and it stores nothing between calls except a 10-minute in-memory cache.
 - Video titles, descriptions, captions and comments are untrusted text. MCP clients should treat them as data, not instructions.

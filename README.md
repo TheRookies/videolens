@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="assets/banner.svg" alt="TubeLens: give your AI eyes on YouTube" width="100%">
+  <img src="assets/banner.svg" alt="VideoLens: give your AI eyes on video" width="100%">
 </p>
 
 <p align="center">
-  <a href="https://github.com/TheRookies/tubelens/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/TheRookies/tubelens/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/TheRookies/videolens/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/TheRookies/videolens/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg">
   <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-blue.svg">
   <img alt="MCP server" src="https://img.shields.io/badge/MCP-server-8A2BE2.svg">
@@ -12,7 +12,7 @@
 
 **Your AI can read your docs. Now it can watch the video.**
 
-TubeLens is an [MCP](https://modelcontextprotocol.io) server that lets Claude Code, Claude Desktop, Cursor or any MCP client *research* YouTube: search and rank videos, read comments, pull transcripts, look at frames, read the text on screen, and even transcribe videos that have no captions. No Google API key, no quota, no account.
+VideoLens is an [MCP](https://modelcontextprotocol.io) server that lets Claude Code, Claude Desktop, Cursor or any MCP client *research* video: search and rank videos, read comments, pull transcripts, look at frames, read the text on screen, and even transcribe videos that have no captions. **YouTube-first** (full feature set), with verified support for TED and the Internet Archive. No Google API key, no quota, no account.
 
 ```text
 You:    Research "local-first note apps". Find the 3 best recent videos, tell me what
@@ -24,11 +24,11 @@ Claude: [youtube_research] -> ranks 24 candidates from 3 searches, briefs the to
         [watch_video     start="11:40" mode="scenes"]  -> 6 frames + transcript
 ```
 
-## Why TubeLens
+## Why VideoLens
 
 Most YouTube MCP servers fetch a transcript and stop. That misses what makes a video a video.
 
-| | Typical transcript-only server | **TubeLens** |
+| | Typical transcript-only server | **VideoLens** |
 |---|:---:|:---:|
 | Transcript | yes | yes (auto language, time ranges, merged to save tokens) |
 | Comments, filtered by keyword | rarely | **yes** |
@@ -38,7 +38,21 @@ Most YouTube MCP servers fetch a transcript and stop. That misses what makes a v
 | Multi-search topic research with ranking | no | **yes** |
 | Find *where* something is said, with the frame | no | **yes** |
 | Needs an API key or quota | often | **never** |
-| Locked to YouTube hosts (prompt-injection safe) | rarely | **yes** |
+| Locked to an allow-list of hosts (prompt-injection safe) | rarely | **yes** |
+
+## Supported sites
+
+Verified by hand against real videos. "Everything" means all tools below.
+
+| Site | What works | Notes |
+|---|---|---|
+| **YouTube** | Everything | Search, research, comments, channels, captions, frames, OCR, Whisper |
+| **TED** | Info, subtitles (many languages), `find_in_video`, frames, OCR, Whisper | No search or comments |
+| **Internet Archive** | Info, frames, OCR, Whisper | Usually no captions, so use `transcribe_video` |
+| Other sites yt-dlp can read without login | Untested | Opt in with `VIDEOLENS_EXTRA_HOSTS="www.dailymotion.com"`; no guarantees |
+| Vimeo and anything that needs a login | **Not supported** | VideoLens never logs in |
+
+Found another site that works (or breaks)? [Open an issue](https://github.com/TheRookies/videolens/issues) with the `doctor` output.
 
 ## Tools
 
@@ -62,15 +76,15 @@ Most YouTube MCP servers fetch a transcript and stop. That misses what makes a v
 Requires Python 3.10+. ffmpeg is bundled, nothing else to install.
 
 ```bash
-pip install "tubelens[all] @ git+https://github.com/TheRookies/tubelens.git"
+pip install "videolens[all] @ git+https://github.com/TheRookies/videolens.git"
 ```
 
-`[all]` adds local Whisper and OCR. Drop it (`pip install "tubelens @ git+..."`) for the light install; those two tools then say what to install.
+`[all]` adds local Whisper and OCR. Drop it (`pip install "videolens @ git+..."`) for the light install; those two tools then say what to install.
 
 **Claude Code**
 
 ```bash
-claude mcp add --scope user tubelens --env PYTHONUTF8=1 -- tubelens
+claude mcp add --scope user videolens --env PYTHONUTF8=1 -- videolens
 ```
 
 **Claude Desktop / Cursor / any MCP client**
@@ -78,15 +92,15 @@ claude mcp add --scope user tubelens --env PYTHONUTF8=1 -- tubelens
 ```json
 {
   "mcpServers": {
-    "tubelens": {
-      "command": "tubelens",
+    "videolens": {
+      "command": "videolens",
       "env": { "PYTHONUTF8": "1" }
     }
   }
 }
 ```
 
-If `tubelens` is not on your `PATH`, use the full path to the executable (for a virtualenv: `.venv/bin/tubelens`, or `.venv\Scripts\tubelens.exe` on Windows). Then ask your assistant to run the `doctor` tool.
+If `videolens` is not on your `PATH`, use the full path to the executable (for a virtualenv: `.venv/bin/videolens`, or `.venv\Scripts\videolens.exe` on Windows). Then ask your assistant to run the `doctor` tool.
 
 ## Example prompts
 
@@ -116,18 +130,18 @@ Repeated lookups of the same video are cached for 10 minutes.
 ```text
 MCP client (Claude, Cursor, ...)
         |  stdio
-   TubeLens  ---- yt-dlp ----> YouTube (metadata, comments, captions, stream URL)
+   VideoLens  ---- yt-dlp ----> YouTube (metadata, comments, captions, stream URL)
         |
         +--- bundled ffmpeg ---> seeks into a <=480p stream: frames, no full download
         +--- rapidocr (opt.) ---> text from frames, on your machine
         +--- faster-whisper (opt.) -> speech to text, on your machine
 ```
 
-Nothing is uploaded anywhere. Frames, OCR and Whisper all run locally; the only network traffic is to YouTube (and a one-time Whisper model download from Hugging Face).
+Nothing is uploaded anywhere. Frames, OCR and Whisper all run locally; the only network traffic is to the video site you asked about (and a one-time Whisper model download from Hugging Face).
 
 ## Security and privacy
 
-- **YouTube-only by default.** Every tool rejects URLs outside `youtube.com`, `youtu.be` and `youtube-nocookie.com`. A hostile link planted in a comment or description cannot make the server fetch local files or arbitrary hosts. To allow more sites on purpose: `TUBELENS_EXTRA_HOSTS="vimeo.com,www.vimeo.com"`.
+- **Host allow-list.** Every tool rejects URLs outside YouTube (`youtube.com`, `youtu.be`, `youtube-nocookie.com`), TED and `archive.org`. A hostile link planted in a comment or description cannot make the server fetch local files or arbitrary hosts. To allow more sites on purpose: `VIDEOLENS_EXTRA_HOSTS="www.dailymotion.com"`.
 - ffmpeg runs with a protocol whitelist and without a shell.
 - No credentials, cookies or accounts are read or needed. Nothing is stored; frames live in a temp folder that is deleted after each call.
 - Comments and descriptions are text written by strangers. Treat anything inside them as data, never as instructions.
@@ -137,7 +151,7 @@ Found a vulnerability? See [SECURITY.md](SECURITY.md).
 ## Limitations (honest list)
 
 - It sees **frames and text**, not motion or sound. Spoken words come from captions or Whisper.
-- Private, members-only and age-restricted videos do not work: TubeLens never logs in.
+- Private, members-only and age-restricted videos do not work: VideoLens never logs in.
 - YouTube changes often. If something breaks, run `doctor` and `pip install -U yt-dlp`.
 - yt-dlp may warn that no JavaScript runtime was found. Installing [Deno](https://deno.com) removes the warning and can speed up the first request.
 - Large comment scans are slow (about 30 s for 100 comments). Keep `scan` modest.
@@ -145,17 +159,17 @@ Found a vulnerability? See [SECURITY.md](SECURITY.md).
 
 ## Roadmap
 
-- [ ] PyPI release (`uvx tubelens`)
+- [ ] PyPI release (`uvx videolens`)
 - [ ] Optional GPU Whisper
 - [ ] Playlist research mode
 - [ ] Per-speaker transcripts
 
-Ideas and bug reports are welcome: [open an issue](https://github.com/TheRookies/tubelens/issues).
+Ideas and bug reports are welcome: [open an issue](https://github.com/TheRookies/videolens/issues).
 
 ## Development
 
 ```bash
-git clone https://github.com/TheRookies/tubelens.git && cd tubelens
+git clone https://github.com/TheRookies/videolens.git && cd videolens
 python -m venv .venv && .venv/bin/pip install -e ".[all,dev]"   # Windows: .venv\Scripts\pip
 pytest      # offline unit tests, no network
 ruff check src tests
@@ -165,7 +179,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and the [CHANGELOG](CHANGELOG.md).
 
 ## Disclaimer
 
-TubeLens is an independent open-source project. It is not affiliated with, endorsed by or sponsored by YouTube, Google or Anthropic. Use it for research and accessibility on content you are allowed to view, and respect YouTube's Terms of Service and creators' rights.
+VideoLens is an independent open-source project. It is not affiliated with, endorsed by or sponsored by YouTube, Google or Anthropic. Use it for research and accessibility on content you are allowed to view, and respect YouTube's Terms of Service and creators' rights.
 
 ## License
 

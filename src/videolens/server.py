@@ -1,12 +1,14 @@
-"""TubeLens: YouTube research and video understanding for MCP clients. No API key.
+"""VideoLens: video research and understanding for MCP clients. YouTube-first, no API key.
 
 Reads metadata, comments, transcripts; searches and researches topics; "watches" videos through
 frames (even or scene-based) and OCR; transcribes silent-caption videos with local Whisper.
 Built on yt-dlp, a bundled ffmpeg (imageio-ffmpeg) and optional faster-whisper / rapidocr.
+Tested sites: YouTube (everything), TED and Internet Archive (no search/comments).
 """
 import concurrent.futures as cf
 import datetime as dt
 import functools
+import html
 import json
 import math
 import os
@@ -28,7 +30,7 @@ from PIL import Image as PILImage
 
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
-mcp = FastMCP("tubelens")
+mcp = FastMCP("videolens")
 FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()  # bundled ffmpeg, no system install needed
 PROTOCOLS = "https,http,tls,tcp,crypto"
 
@@ -39,9 +41,14 @@ _YT_HOSTS = {
 }
 
 
+# Sites verified by hand against real videos (info, frames, OCR, Whisper; subtitles where offered).
+_TESTED_HOSTS = {"ted.com", "www.ted.com", "archive.org", "www.archive.org"}
+
+
 def _extra_hosts() -> set:
-    """Opt-in extra video hosts: TUBELENS_EXTRA_HOSTS="vimeo.com,www.vimeo.com". Empty by default."""
-    raw = os.environ.get("TUBELENS_EXTRA_HOSTS", "")
+    """Opt-in extra video hosts (untested, anything yt-dlp supports without login):
+    VIDEOLENS_EXTRA_HOSTS="www.dailymotion.com,vimeo.com". Empty by default."""
+    raw = os.environ.get("VIDEOLENS_EXTRA_HOSTS") or os.environ.get("TUBELENS_EXTRA_HOSTS", "")  # old name
     return {h.strip().lower() for h in raw.split(",") if h.strip()}
 
 
@@ -51,10 +58,11 @@ def _check_url(url: str, hosts: set | None = None) -> str:
     url = url.strip()
     if hosts is None and re.fullmatch(r"[A-Za-z0-9_-]{11}", url):  # bare video id
         return f"https://www.youtube.com/watch?v={url}"
-    allowed = hosts if hosts is not None else (_YT_HOSTS | _extra_hosts())
+    allowed = hosts if hosts is not None else (_YT_HOSTS | _TESTED_HOSTS | _extra_hosts())
     u = urllib.parse.urlparse(url)
     if u.scheme not in ("http", "https") or (u.hostname or "").lower() not in allowed:
-        raise ValueError("URL host not allowed (YouTube by default; see TUBELENS_EXTRA_HOSTS).")
+        raise ValueError("URL host not allowed (YouTube, TED, archive.org by default; "
+                         "see VIDEOLENS_EXTRA_HOSTS to add others).")
     return url
 
 
@@ -64,7 +72,8 @@ _FRIENDLY = (
     ("members-only", "Members-only video: not accessible without a login."),
     ("video unavailable", "Video unavailable (removed, region-blocked or wrong link)."),
     ("this live event", "Live stream has not started or has no recording yet."),
-    ("429", "YouTube is rate-limiting this IP. Wait a few minutes and retry."),
+    ("logged-in", "This site needs a login, which VideoLens never uses (e.g. Vimeo)."),
+    ("429", "The site is rate-limiting this IP. Wait a few minutes and retry."),
     ("sign in to confirm you", "YouTube asked for bot verification on this IP. Retry later or from another network."),
 )
 
@@ -158,28 +167,73 @@ def _age_days(upload_date: str | None) -> int | None:
 
 
 # --------------------------------------------------------------------------- transcripts
+_CUE = re.compile(r"(?:(\d+):)?(\d+):(\d+)[.,](\d+)\s*-->")
+_SUB_PREFERENCE = ("json3", "vtt", "srt")
+
+
+def _parse_cues(text: str) -> list:
+    """Parse WebVTT or SRT into [(start_sec, text)]."""
+    cues, cur = [], None
+    for line in text.splitlines():
+        m = _CUE.search(line)
+        if m:
+            h, mi, se, ms = m.groups()
+            cur = [int(h or 0) * 3600 + int(mi) * 60 + int(se) + int(ms.ljust(3, "0")[:3]) / 1000, []]
+            cues.append(cur)
+            continue
+        line = line.strip()
+        if cur is None:
+            continue
+        if not line:
+            cur = None
+            continue
+        cur[1].append(html.unescape(re.sub(r"<[^>]+>", "", line)))
+    return [(t, " ".join(parts).strip()) for t, parts in cues if parts]
+
+
+def _get_text(url: str) -> str:
+    if urllib.parse.urlparse(url).scheme not in ("http", "https"):
+        return ""
+    with urllib.request.urlopen(url, timeout=30) as r:
+        return r.read().decode("utf-8", errors="replace")
+
+
+def _fetch_subs(fmt: dict) -> list:
+    url = fmt["url"]
+    raw = _get_text(url)
+    if raw.lstrip().startswith("#EXTM3U"):  # HLS playlist of WebVTT segments (e.g. TED)
+        parts = [urllib.parse.urljoin(url, ln.strip()) for ln in raw.splitlines()
+                 if ln.strip() and not ln.startswith("#")][:300]
+        with cf.ThreadPoolExecutor(max_workers=6) as ex:
+            texts = list(ex.map(_get_text, parts))
+        return sorted(c for t in texts for c in _parse_cues(t))
+    if fmt.get("ext") == "json3":
+        events = []
+        for ev in json.loads(raw).get("events", []):
+            segs = ev.get("segs")
+            if not segs:
+                continue
+            text = "".join(s.get("utf8", "") for s in segs).replace("\n", " ").strip()
+            if text:
+                events.append((ev.get("tStartMs", 0) / 1000.0, text))
+        return events
+    return _parse_cues(raw)
+
+
 def _transcript_events(info: dict, lang: str):
-    """Return (lang_used, [(start_sec, text)]) from manual or auto captions."""
+    """Return (lang_used, [(start_sec, text)]) from manual or auto captions (json3, vtt or srt)."""
     for source in ("subtitles", "automatic_captions"):
         tracks = info.get(source) or {}
         keys = [k for k in tracks if k == lang or k.startswith(lang + "-") or k.startswith(lang + ".")]
         if not keys and source == "automatic_captions":
             keys = [k for k in tracks if k.split("-")[0] == lang.split("-")[0]]
         for k in keys:
-            fmts = [f for f in tracks[k] if f.get("ext") == "json3"]
-            if not fmts:
-                continue
-            with urllib.request.urlopen(fmts[0]["url"], timeout=30) as r:
-                data = json.loads(r.read().decode("utf-8"))
-            events = []
-            for ev in data.get("events", []):
-                segs = ev.get("segs")
-                if not segs:
-                    continue
-                text = "".join(s.get("utf8", "") for s in segs).replace("\n", " ").strip()
-                if text:
-                    events.append((ev.get("tStartMs", 0) / 1000.0, text))
-            return k, events
+            fmts = sorted((f for f in tracks[k] if f.get("ext") in _SUB_PREFERENCE),
+                          key=lambda f: _SUB_PREFERENCE.index(f["ext"]))
+            for fmt in fmts:
+                events = _fetch_subs(fmt)
+                if events:
+                    return k, events
     return None, []
 
 
@@ -189,7 +243,8 @@ def _pick_lang(info: dict, lang: str | None) -> str:
         return lang
     auto = info.get("automatic_captions") or {}
     subs = info.get("subtitles") or {}
-    cands = [info.get("language")] + [k for k in auto if k.endswith("-orig")] + list(subs) + ["en"]
+    cands = ([info.get("language")] + [k for k in auto if k.endswith("-orig")]
+             + (["en"] if "en" in subs else []) + list(subs) + ["en"])
     for c in cands:
         if c:
             return c.split("-")[0]
@@ -398,7 +453,8 @@ def video_transcript(
     url = _check_url(url)
     used, events = _events(url, lang)
     if not events:
-        return f"No captions for lang '{lang}'. Try another lang (see video_info) or use transcribe_video."
+        return (f"No captions for lang '{_pick_lang(_info(url), lang)}'. "
+                "Try another lang (see video_info) or use transcribe_video.")
     s, e = _parse_time(start), _parse_time(end)
     if s is not None or e is not None:
         events = [(t, x) for t, x in events if (s is None or t >= s) and (e is None or t <= e)]

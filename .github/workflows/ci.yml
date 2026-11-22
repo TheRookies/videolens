@@ -24,4 +24,4 @@ jobs:
       - name: Offline tests
         run: pytest -q
       - name: Server imports and registers its tools
-        run: python -c "import tubelens.server as s; print('ok', s.mcp.name)"
+        run: python -c "import videolens.server as s; print('ok', s.mcp.name)"
