@@ -5,7 +5,7 @@
 - **No API key, no quota.** Built on [yt-dlp](https://github.com/yt-dlp/yt-dlp).
 - **No system ffmpeg.** A binary ships via [`imageio-ffmpeg`](https://github.com/imageio/imageio-ffmpeg).
 - **No full downloads.** Frames are grabbed by seeking into a low-res (<=480p) stream.
-- **Token-friendly.** Every tool has size limits so a long video doesn't flood your context.
+- **Token-friendly by default.** Frames are 512px wide JPEGs (6 per call), transcripts are merged into ~20s blocks with repeats removed, comments are trimmed to 300 chars, descriptions to 1500 chars, and every tool has a hard output cap. Ask for more only when you need it: `width`, `n_frames`, `max_chars`, `description_chars`, `chunk_seconds=0` (raw captions), or `start`/`end` to read just one part of a long video.
 
 ## Tools
 

@@ -84,8 +84,30 @@ def _transcript_events(info: dict, lang: str):
     return None, []
 
 
+def _chunk(events, window: int = 20):
+    """Merge caption fragments into ~window-second lines and drop repeats.
+    Raw captions are one line per ~2s with a timestamp each; merging cuts tokens a lot."""
+    if window <= 0:
+        return [(t, x) for t, x in events]
+    out, cur_t, cur = [], None, []
+    last = None
+    for t, x in events:
+        if x == last:
+            continue
+        last = x
+        if cur_t is None:
+            cur_t = t
+        elif t - cur_t >= window:
+            out.append((cur_t, " ".join(cur)))
+            cur_t, cur = t, []
+        cur.append(x)
+    if cur:
+        out.append((cur_t, " ".join(cur)))
+    return out
+
+
 @mcp.tool()
-def video_info(url: str, description_chars: int = 4000) -> str:
+def video_info(url: str, description_chars: int = 1500) -> str:
     """Get YouTube video metadata: title, channel, stats, upload date, tags, chapters, description."""
     url = _check_url(url)
     with _ydl() as y:
@@ -95,23 +117,28 @@ def video_info(url: str, description_chars: int = 4000) -> str:
         f"  {_fmt_time(c['start_time'])} {c['title']}" for c in (i.get("chapters") or [])
     )
     avail = sorted(set((i.get("subtitles") or {}).keys()))
-    auto = sorted((i.get("automatic_captions") or {}).keys())
+    auto = (i.get("automatic_captions") or {})
+    auto_note = "yes" if auto else "no"
+    full = len(i.get("description") or "")
+    more = f"\n...[{full - description_chars} more chars, raise description_chars]" if full > description_chars else ""
     return (
         f"Title: {i.get('title')}\n"
-        f"URL: {i.get('webpage_url')}\n"
         f"Channel: {i.get('channel')} ({i.get('channel_follower_count')} subs)\n"
         f"Uploaded: {i.get('upload_date')}  Duration: {_fmt_time(i.get('duration') or 0)}\n"
         f"Views: {i.get('view_count')}  Likes: {i.get('like_count')}  Comments: {i.get('comment_count')}\n"
-        f"Categories: {i.get('categories')}  Tags: {(i.get('tags') or [])[:20]}\n"
-        f"Manual subs: {avail}\nAuto-caption langs: {len(auto)} (e.g. {auto[:8]})\n"
+        f"Tags: {(i.get('tags') or [])[:10]}\n"
+        f"Manual subs: {avail or 'none'}  Auto-captions: {auto_note}\n"
         f"Chapters:\n{chapters or '  none'}\n\n"
-        f"Description:\n{desc}"
+        f"Description:\n{desc}{more}"
     )
 
 
 @mcp.tool()
-def video_comments(url: str, max_comments: int = 50, sort: str = "top", replies: bool = False) -> str:
-    """Read YouTube comments. sort: 'top' or 'new'. replies=True also fetches replies (max 3 per thread)."""
+def video_comments(
+    url: str, max_comments: int = 30, sort: str = "top", replies: bool = False, max_chars_each: int = 300
+) -> str:
+    """Read YouTube comments. sort: 'top' or 'new'. replies=True also fetches replies (max 3 per thread).
+    Each comment is cut to max_chars_each characters."""
     url = _check_url(url)
     # yt-dlp: max-comments, max-parents, max-replies, max-replies-per-thread (separate list items)
     rep = "30" if replies else "0"
@@ -131,34 +158,53 @@ def video_comments(url: str, max_comments: int = 50, sort: str = "top", replies:
     lines = [f"{len(comments)} comments (video total: {i.get('comment_count')})"]
     for c in comments:
         indent = "    ↳ " if c.get("parent") not in (None, "root") else "- "
-        lines.append(
-            f"{indent}[{c.get('author')}] ({c.get('like_count', 0)} likes"
-            f"{', pinned' if c.get('is_pinned') else ''}) {c.get('text', '').strip()}"
-        )
+        text = " ".join((c.get("text") or "").split())
+        if len(text) > max_chars_each:
+            text = text[:max_chars_each] + "…"
+        likes = c.get("like_count") or 0
+        meta = f"{likes}♥" if likes else ""
+        if c.get("is_pinned"):
+            meta += " pinned"
+        lines.append(f"{indent}{c.get('author')} {('(' + meta.strip() + ') ') if meta else ''}{text}")
     return "\n".join(lines)
 
 
 @mcp.tool()
-def video_transcript(url: str, lang: str = "en", with_timestamps: bool = True, max_chars: int = 30000) -> str:
-    """Get video transcript (manual subs first, then auto-captions). lang e.g. 'en', 'tr'."""
+def video_transcript(
+    url: str,
+    lang: str = "en",
+    with_timestamps: bool = True,
+    max_chars: int = 12000,
+    start: str | None = None,
+    end: str | None = None,
+    chunk_seconds: int = 20,
+) -> str:
+    """Get video transcript (manual subs first, then auto-captions). lang e.g. 'en', 'tr'.
+    Lines are merged into ~chunk_seconds blocks (0 = raw captions) to save tokens. Use start/end
+    ('1:30') to read only part of a long video; output is capped at max_chars."""
     url = _check_url(url)
     with _ydl() as y:
         i = y.extract_info(url, download=False)
     used, events = _transcript_events(i, lang)
     if not events:
         return f"No transcript for lang '{lang}'. Try another lang; see video_info for available ones."
+    s, e = _parse_time(start), _parse_time(end)
+    if s is not None or e is not None:
+        events = [(t, x) for t, x in events if (s is None or t >= s) and (e is None or t <= e)]
+    events = _chunk(events, chunk_seconds)
     if with_timestamps:
-        text = "\n".join(f"[{_fmt_time(t)}] {s}" for t, s in events)
+        text = "\n".join(f"[{_fmt_time(t)}] {x}" for t, x in events)
     else:
-        text = " ".join(s for _, s in events)
-    note = f"(lang: {used}, {len(events)} segments)\n"
+        text = " ".join(x for _, x in events)
     if len(text) > max_chars:
-        text = text[:max_chars] + f"\n...[truncated, {len(text)} chars total]"
-    return note + text
+        last_t = text[:max_chars].rfind("\n[")
+        cut = text[:last_t] if last_t > 0 else text[:max_chars]
+        text = cut + f"\n...[truncated at {len(cut)} of {len(text)} chars; use start/end to continue]"
+    return f"(lang: {used})\n{text}"
 
 
 @mcp.tool()
-def youtube_search(query: str, n: int = 10) -> str:
+def youtube_search(query: str, n: int = 8) -> str:
     """Search YouTube. Returns title, channel, duration, views, URL."""
     with _ydl(extract_flat=True) as y:
         r = y.extract_info(f"ytsearch{n}:{query}", download=False)
@@ -172,7 +218,7 @@ def youtube_search(query: str, n: int = 10) -> str:
 
 
 @mcp.tool()
-def channel_videos(url: str, n: int = 15) -> str:
+def channel_videos(url: str, n: int = 10) -> str:
     """List recent videos of a channel or playlist URL (e.g. https://www.youtube.com/@name/videos)."""
     url = _check_url(url)
     with _ydl(extract_flat=True, playlistend=n) as y:
@@ -186,20 +232,23 @@ def channel_videos(url: str, n: int = 15) -> str:
 @mcp.tool()
 def watch_video(
     url: str,
-    n_frames: int = 8,
+    n_frames: int = 6,
     start: str | None = None,
     end: str | None = None,
-    width: int = 768,
+    width: int = 512,
     include_transcript: bool = True,
     lang: str = "en",
 ) -> list:
     """'Watch' a video: returns evenly spaced frames (images, each labelled with timestamp) plus the
     transcript for the same range. Use start/end ('90', '1:30', '0:01:30') to zoom on a segment and call
-    again with a narrower range for more detail. n_frames max 24.
+    again with a narrower range for more detail. n_frames max 24 (default 6, width 512 to save tokens;
+    raise width to ~768 only when you must read small text on screen).
     """
     url = _check_url(url)
     n_frames = max(1, min(int(n_frames), 24))
-    with _ydl() as y:
+    width = max(256, min(int(width), 1024))
+    # one yt-dlp call: gives metadata, captions and a low-res stream URL together
+    with _ydl(format="bv*[height<=480]/b[height<=480]/worst") as y:
         info = y.extract_info(url, download=False)
     dur = float(info.get("duration") or 0)
     s = _parse_time(start) or 0.0
@@ -210,10 +259,8 @@ def watch_video(
 
     tmp = Path(tempfile.mkdtemp(prefix="ytmcp_"))
     try:
-        # resolve a low-res direct stream URL; ffmpeg seeks into it, no full download
-        with _ydl(format="bv*[height<=480]/b[height<=480]/worst") as y:
-            sel = y.extract_info(url, download=False)
-        fmt = (sel.get("requested_formats") or [sel])[0]
+        # ffmpeg seeks into the low-res stream URL, no full download
+        fmt = (info.get("requested_formats") or [info])[0]
         stream = fmt["url"]
         headers = "".join(f"{k}: {v}\r\n" for k, v in (fmt.get("http_headers") or {}).items())
         step = (e - s) / n_frames
@@ -226,7 +273,7 @@ def watch_video(
             fpath = tmp / f"f{k}.jpg"
             subprocess.run(
                 [FFMPEG, "-y", "-loglevel", "error", "-protocol_whitelist", "https,http,tls,tcp,crypto", "-headers", headers, "-ss", f"{t:.2f}", "-i", stream,
-                 "-frames:v", "1", "-vf", f"scale={width}:-2", "-q:v", "4", str(fpath)],
+                 "-frames:v", "1", "-vf", f"scale={width}:-2", "-q:v", "6", str(fpath)],
                 check=False, timeout=90,
             )
             if fpath.exists() and fpath.stat().st_size > 0:
@@ -234,10 +281,12 @@ def watch_video(
                 out.append(Image(data=fpath.read_bytes(), format="jpeg"))
         if include_transcript:
             used, events = _transcript_events(info, lang)
-            seg = [(t, x) for t, x in events if s <= t <= e]
+            seg = _chunk([(t, x) for t, x in events if s <= t <= e], 15)
             if seg:
                 txt = "\n".join(f"[{_fmt_time(t)}] {x}" for t, x in seg)
-                out.append(f"Transcript ({used}) for range:\n{txt[:15000]}")
+                if len(txt) > 5000:
+                    txt = txt[:5000] + "\n...[cut; narrow start/end or use video_transcript]"
+                out.append(f"Transcript ({used}):\n{txt}")
             else:
                 out.append("(no transcript in range / lang)")
         return out
