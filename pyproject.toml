@@ -1,0 +1,51 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tubelens"
+version = "0.2.0"
+description = "Give your AI eyes on YouTube: an MCP server for video research, comments, transcripts, frames, OCR and local Whisper. No API key."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [{ name = "TheRookies" }]
+keywords = ["mcp", "model-context-protocol", "youtube", "yt-dlp", "claude", "ai-agents", "transcript", "video-understanding"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Topic :: Multimedia :: Video",
+]
+dependencies = [
+  "mcp>=1.0,<2",
+  "yt-dlp",
+  "imageio-ffmpeg",
+  "pillow",
+]
+
+[project.optional-dependencies]
+whisper = ["faster-whisper", "numpy"]
+ocr = ["rapidocr-onnxruntime"]
+all = ["faster-whisper", "numpy", "rapidocr-onnxruntime"]
+dev = ["pytest", "ruff"]
+
+[project.scripts]
+tubelens = "tubelens.server:main"
+
+[project.urls]
+Homepage = "https://github.com/TheRookies/tubelens"
+Issues = "https://github.com/TheRookies/tubelens/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tubelens"]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
